@@ -525,6 +525,7 @@ export class FenixService {
     let shiftLessons: Lesson[] = [];
     let max = 0;
     let room: string = NO_ROOM_FOUND;
+    let campus: string;
 
     while (lessons.length !== 0) {
       weekLessons = [];
@@ -539,6 +540,7 @@ export class FenixService {
       weekLessons.push(baseline);
       lessons.shift();
       if (room === NO_ROOM_FOUND && baseline.room !== NO_ROOM_FOUND) room = baseline.room;
+      if (!campus && baseline.campus) campus = baseline.campus;
 
       // Find lessons on same week as baseline
       for (let i = lessons.length - 1; i >= 0; i--) {
@@ -553,6 +555,7 @@ export class FenixService {
           weekLessons.push(shiftLesson);
           lessons.splice(i, 1);
           if (room === NO_ROOM_FOUND && shiftLesson.room !== NO_ROOM_FOUND) room = shiftLesson.room;
+          if (!campus && shiftLesson.campus) campus = shiftLesson.campus;
         }
       }
 
@@ -567,6 +570,12 @@ export class FenixService {
     if (room !== NO_ROOM_FOUND) {
       for (const lesson of shiftLessons)
         if (lesson.room === NO_ROOM_FOUND) lesson.room = room;
+    }
+
+    // Set campus if final lessons don't have
+    if (campus) {
+      for (const lesson of shiftLessons)
+        if (!lesson.campus) lesson.campus = campus;
     }
 
     return shiftLessons;
