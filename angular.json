@@ -92,18 +92,18 @@
         "serve": {
           "builder": "@angular-devkit/build-angular:dev-server",
           "options": {
-            "browserTarget": "gerador-horarios-ist:build"
+            "buildTarget": "gerador-horarios-ist:build"
           },
           "configurations": {
             "production": {
-              "browserTarget": "gerador-horarios-ist:build:production"
+              "buildTarget": "gerador-horarios-ist:build:production"
             }
           }
         },
         "extract-i18n": {
           "builder": "@angular-devkit/build-angular:extract-i18n",
           "options": {
-            "browserTarget": "gerador-horarios-ist:build"
+            "buildTarget": "gerador-horarios-ist:build"
           }
         },
         "test": {
