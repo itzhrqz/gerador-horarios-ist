@@ -23,11 +23,15 @@
             "polyfills": "src/polyfills.ts",
             "tsConfig": "tsconfig.app.json",
             "allowedCommonJsDependencies": [
+              "@babel/runtime",
+              "@simonwep/pickr",
+              "core-js",
+              "dompurify",
               "hammerjs",
+              "html2canvas",
               "lodash",
               "raf",
-              "@babel/runtime",
-              "core-js"
+              "rgbcolor"
             ],
             "assets": [
               "src/favicon",
@@ -144,6 +148,5 @@
         }
       }
     }
-  },
-  "defaultProject": "gerador-horarios-ist"
+  }
 }
