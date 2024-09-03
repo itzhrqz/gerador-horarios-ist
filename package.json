@@ -66,7 +66,7 @@
     "karma-jasmine": "~4.0.0",
     "karma-jasmine-html-reporter": "^1.5.0",
     "lodash": "^4.17.21",
-    "ngx-google-analytics": "^13.0.1",
+    "ngx-google-analytics": "^14.0.1",
     "open": "^7.0.3",
     "protractor": "~7.0.0",
     "ts-node": "~8.3.0",
