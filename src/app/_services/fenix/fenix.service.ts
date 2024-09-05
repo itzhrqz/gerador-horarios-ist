@@ -293,7 +293,7 @@ export class FenixService {
               degrees.push(degree);
             }
           } catch (error) { this.errorService.showError(error, {
-            While: 'Getting degress',
+            While: 'Getting degrees',
             academicTerm
           }); }
         }
@@ -348,10 +348,13 @@ export class FenixService {
 
             courses.push(course);
           } catch (error) {
+            const degree: Degree = this.stateService.degreesRepository.get(academicTerm).find(degree => degree.id === degreeId);
             this.errorService.showError(error, {
               While: 'Getting courses basic info',
-              academicTerm,
-              degreeId
+              'Academic Term': academicTerm,
+              'Degree ID': degreeId,
+              'Degree Acronym': degree.acronym,
+              'Degree Name': degree.name
             });
           }
         }
@@ -451,9 +454,12 @@ export class FenixService {
 
           } else this.errorService.showError(error, {
             While: 'Getting missing course info',
-            courseId: course.id,
-            courseName: course.name,
-            courseAcronym: course.acronym
+            'Degree ID': course.degree.id,
+            'Degree Acronym': course.degree.acronym,
+            'Degree Name': course.degree.name,
+            'Course ID': course.id,
+            'Course Name': course.name,
+            'Course Acronym': course.acronym
           });
         }
       });
