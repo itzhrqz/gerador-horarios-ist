@@ -188,82 +188,11 @@ export class SchedulesGenerationService {
   }
 
   combineShifts(course: Course): Class[] {
-    
-     if (course.shifts) {
-      for (const shift of course.shifts) {
-        if (!shift.lessons || shift.lessons.length < 2) continue;
-
-        shift.lessons.sort((a, b) => {
-          const dayA = a.start.getDay();
-          const dayB = b.start.getDay();
-          if (dayA !== dayB) return dayA - dayB;
-
-          return a.start.getTime() - b.start.getTime();
-        });
-      }
-    }
-
-    
-    
     const shiftsMap = new Map<string, Shift[]>();
 
-       const addToMap = (key: string, s: Shift) => {
-      const arr = shiftsMap.get(key);
-      if (arr) arr.push(s);
-      else shiftsMap.set(key, [s]);
-    };
-
-    // Group shifts by type first
-    const byType = new Map<string, Shift[]>();
-    for (const shift of course.shifts ?? []) {
-      const arr = byType.get(shift.type);
-      if (arr) arr.push(shift);
-      else byType.set(shift.type, [shift]);
-    }
-
-    const maxSlotsForType = (shifts: Shift[]): number => {
-      let max = 0;
-      for (const s of shifts ?? []) {
-        const c = s.lessons ? s.lessons.length : 0;
-        if (c > max) max = c;
-      }
-      return max;
-    };
-
-    // Build shiftsMap (normal mode or individual-slot mode)
-    for (const [type, shifts] of byType.entries()) {
-
-      if (!this.stateService.mixShiftsEnabled || !course.isIndividualLessonEnabled(type as any)) {
-        // Choose one shift for this type
-        for (const shift of shifts) addToMap(type, shift);
-        continue;
-      }
-
-      // Individual enabled: allow splitting into per-weekly-slot choices (if there are >=2 slots)
-      const maxSlots = maxSlotsForType(shifts);
-
-      if (maxSlots < 2) {
-        // Nothing to split -> fallback to normal
-        for (const shift of shifts) addToMap(type, shift);
-        continue;
-      }
-
-      for (let slot = 0; slot < maxSlots; slot++) {
-        const key = `${type}__slot${slot}`;
-
-        // Only shifts that actually have this slot contribute candidates
-        const candidates = shifts.filter(s => s.lessons && s.lessons[slot]);
-        if (candidates.length === 0) continue;
-
-        for (const shift of candidates) {
-          const lesson = shift.lessons[slot];
-          const slotShift = new Shift(`${shift.name}#${slot + 1}`, type as any, [lesson], shift.campus);
-          addToMap(key, slotShift);
-        }
-      }
-    }
-
-
+    // Group shifts based on type of class
+    for (const shift of course.shifts)
+      shiftsMap.has(shift.type) ? shiftsMap.get(shift.type).push(shift) : shiftsMap.set(shift.type, [shift]);
 
     // Get combinations of shifts
     let combinations: Shift[][] = [];
@@ -286,327 +215,87 @@ export class SchedulesGenerationService {
     return classes;
   }
 
-async combineClasses(classes: Class[][]): Promise<Class[][]> {
+  async combineClasses(classes: Class[][]): Promise<Class[][]> {
+    const optimalNumberWorkers = window.navigator.hardwareConcurrency;
+    const browserSupportsWebWorkers = this.getBrowserSupportForWorkers();
 
-  /*
-   * ============================================
-   * CONFIGURATION
-   * ============================================
-   *
-   * Change this number directly in the code.
-   *
-   * Example:
-   *
-   * 100000 = maximum 100K generated schedules
-   * 500000 = maximum 500K generated schedules
-   */
-  const MAX_GENERATED_SCHEDULES = 500000;
+    const totalClasses = classes && classes.length !== 0 ? classes.map(val => val.length).reduce((total, val) => total + val) : 0;
+    const incBar = 80;
 
-
-  /*
-   * No classes => no schedules.
-   */
-  if (!classes || classes.length === 0)
-    return [];
-
-
-  /*
-   * If one course has no possible class,
-   * there cannot be a complete schedule.
-   */
-  if (classes.some(cls => cls.length === 0))
-    return [];
-
-
-  /*
-   * Courses with fewer possibilities first.
-   *
-   * This is already done in your old implementation and is
-   * especially useful for backtracking because it makes the
-   * search tree narrower near the root.
-   */
-  classes.sort((a, b) => a.length - b.length);
-
-
-  /*
-   * Check whether Web Workers are available.
-   */
-  const browserSupportsWebWorkers =
-    this.getBrowserSupportForWorkers();
-
-
-  /*
-   * ==========================================================
-   * FALLBACK: NO WEB WORKERS
-   * ==========================================================
-   *
-   * We still use incremental backtracking.
-   *
-   * Most importantly, we DO NOT use allPossibleCases().
-   */
-  if (!browserSupportsWebWorkers) {
-
-    const combinations: Class[][] = [];
-    const current: Class[] = [];
-
-    const generate = (courseIndex: number): boolean => {
-
-      /*
-       * Maximum reached.
-       */
-      if (combinations.length >= MAX_GENERATED_SCHEDULES)
-        return true;
-
-
-      /*
-       * Complete valid schedule.
-       */
-      if (courseIndex === classes.length) {
-        combinations.push([...current]);
-        return false;
+    // Create workers
+    const workers: Worker[] = [];
+    if (browserSupportsWebWorkers) {
+      for (let i = 0; i < optimalNumberWorkers; i++) {
+        const worker = new Worker(new URL('../../_workers/generation-worker.worker', import.meta.url), {type: 'module'});
+        workers.push(worker);
       }
+    }
 
+    // Sort classes by least
+    classes.sort(((a, b) => a.length - b.length));
 
-      /*
-       * Try every possible class for this course.
-       */
-      for (const cls of classes[courseIndex]) {
+    // Get combinations of classes
+    let combinations: Class[][] = [];
+    for (const cls of classes) {
 
-        /*
-         * Check only against classes already selected.
-         */
-        if (this.checkForOverlapWithCurrentClasses(
-          cls,
-          current
-        ))
-          continue;
+      if (!browserSupportsWebWorkers) {
+        const allCases = this.allPossibleCases([combinations, cls]);
+        combinations = [];
+        for (const combination of allCases) {
+          // Check for overlaps and discard
+          if (this.checkForOverlapsOnClasses(combination)) continue;
+          combinations.push(combination);
+        }
+      } else {
+        const numberClasses = cls.length;
+        const fracOfClasses = numberClasses / totalClasses;
+        const classesPerWorker = Math.floor(numberClasses / optimalNumberWorkers);
 
+        let mod = numberClasses % optimalNumberWorkers;
+        let tempCombinations = [];
 
-        current.push(cls);
+        let workersUsed = 0;
+        let workersLeft = 0;
 
-        const limitReached = generate(courseIndex + 1);
+        const allWorkersFinished = new EventEmitter<void>();
+        const allFinished = new Promise<void>((resolve) => allWorkersFinished.subscribe(() => resolve()));
 
-        current.pop();
+        let i = 0;
+        let workerIndex = 0;
+        while (i < numberClasses) {
+          workers[workerIndex].onmessage = async ({data}) => {
+            tempCombinations = tempCombinations.concat(this.parseData(data));
+            workersLeft--;
+            this.updateBar((incBar * fracOfClasses) / workersUsed);
+            if (workersLeft === 0) allWorkersFinished.emit();
+          };
 
+          if (mod > 0) {
+            workers[workerIndex].postMessage({worker: workerIndex + 1, combinations, classes: cls.slice(i, i + classesPerWorker + 1)});
+            mod--;
+            i = i + classesPerWorker + 1;
 
-        if (limitReached)
-          return true;
+          } else {
+            workers[workerIndex].postMessage({worker: workerIndex + 1, combinations, classes: cls.slice(i, i + classesPerWorker)});
+            i = i + classesPerWorker;
+          }
+          workersUsed++;
+          workersLeft++;
+          workerIndex++;
+        }
+
+        await allFinished;
+        combinations = [...tempCombinations];
+        this.logger.log('all combinations with course ' + cls[0].course.formatAcronym() + ' finished', combinations);
       }
+      if (combinations.length === 0) return [];
+    }
 
-      return false;
-    };
-
-
-    generate(0);
-
+    // Terminate workers
+    for (const worker of workers)
+      worker.terminate();
     return combinations;
   }
-
-
-  /*
-   * ==========================================================
-   * WEB WORKERS
-   * ==========================================================
-   */
-
-  const numberOfWorkers = Math.max(
-    1,
-    Math.min(
-      window.navigator.hardwareConcurrency || 1,
-      classes[0].length
-    )
-  );
-
-
-  /*
-   * We split the FIRST course between workers.
-   *
-   * Suppose:
-   *
-   *   first course = 100 classes
-   *   workers = 4
-   *
-   * then approximately:
-   *
-   *   worker 1 -> 25 classes
-   *   worker 2 -> 25 classes
-   *   worker 3 -> 25 classes
-   *   worker 4 -> 25 classes
-   *
-   * Each worker explores a completely different part
-   * of the search tree.
-   */
-
-  const workers: Worker[] = [];
-
-  const workerPromises: Promise<Class[][]>[] = [];
-
-
-  /*
-   * Divide first-course classes between workers.
-   */
-  const classesPerWorker =
-    Math.floor(classes[0].length / numberOfWorkers);
-
-  let remainder =
-    classes[0].length % numberOfWorkers;
-
-
-  let startIndex = 0;
-
-
-  for (let workerIndex = 0;
-       workerIndex < numberOfWorkers;
-       workerIndex++) {
-
-    /*
-     * Distribute the remainder amongst the first workers.
-     */
-    const numberForThisWorker =
-      classesPerWorker +
-      (remainder > 0 ? 1 : 0);
-
-    if (remainder > 0)
-      remainder--;
-
-
-    const firstClasses =
-      classes[0].slice(
-        startIndex,
-        startIndex + numberForThisWorker
-      );
-
-    startIndex += numberForThisWorker;
-
-
-    /*
-     * Create worker.
-     */
-    const worker = new Worker(
-      new URL(
-        '../../_workers/generation-worker.worker',
-        import.meta.url
-      ),
-      {type: 'module'}
-    );
-
-
-    workers.push(worker);
-
-
-    /*
-     * Give each worker a fraction of the maximum.
-     *
-     * This prevents every worker from independently generating
-     * MAX_GENERATED_SCHEDULES.
-     */
-    const maxForWorker = Math.ceil(
-      MAX_GENERATED_SCHEDULES / numberOfWorkers
-    );
-
-
-    /*
-     * Convert the worker's message into a Promise.
-     */
-    const promise = new Promise<Class[][]>(
-      (resolve, reject) => {
-
-        worker.onmessage = ({data}) => {
-
-          if (data.type === 'result') {
-            resolve(
-              this.parseData(data.combinations)
-            );
-          }
-
-          if (data.type === 'error') {
-            reject(
-              new Error(data.message)
-            );
-          }
-        };
-
-
-        worker.onerror = (error) => {
-          reject(error);
-        };
-      }
-    );
-
-
-    workerPromises.push(promise);
-
-
-    /*
-     * Send ONLY:
-     *
-     * - all possible classes
-     * - this worker's first-course partition
-     * - its result limit
-     *
-     * We do NOT send a gigantic `combinations` array.
-     */
-    worker.postMessage({
-      type: 'generate',
-
-      worker: workerIndex + 1,
-
-      classes,
-
-      firstClasses,
-
-      maxCombinations: maxForWorker
-    });
-  }
-
-
-  /*
-   * Wait for all workers.
-   */
-  const workerResults =
-    await Promise.all(workerPromises);
-
-
-  /*
-   * Always terminate workers.
-   */
-  for (const worker of workers)
-    worker.terminate();
-
-
-  /*
-   * Merge results.
-   *
-   * At most MAX_GENERATED_SCHEDULES are kept.
-   */
-  const combinations: Class[][] = [];
-
-  for (const result of workerResults) {
-
-    const remaining =
-      MAX_GENERATED_SCHEDULES -
-      combinations.length;
-
-    if (remaining <= 0)
-      break;
-
-    combinations.push(
-      ...result.slice(0, remaining)
-    );
-  }
-
-
-  this.logger.log(
-    'Generated ' +
-    combinations.length +
-    ' schedules (limit: ' +
-    MAX_GENERATED_SCHEDULES +
-    ')'
-  );
-
-
-  return combinations;
-}
 
   /* --------------------------------------------------------------------------------
    * Returns all possible combinations between different arrays.
@@ -667,20 +356,6 @@ async combineClasses(classes: Class[][]): Promise<Class[][]> {
         if (classes[i].overlap(classes[j])) return true;
     return false;
   }
-
-  checkForOverlapWithCurrentClasses(
-  cls: Class,
-  current: Class[]
-): boolean {
-
-  for (const selectedClass of current) {
-
-    if (cls.overlap(selectedClass))
-      return true;
-  }
-
-  return false;
-}
 
   calculateSchedulesInfo(combinations: Class[][]): Schedule[] {
     let id = 0;
