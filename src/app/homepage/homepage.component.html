@@ -258,7 +258,7 @@
     class="form-control"
     [(ngModel)]="maxSchedulesInMemory" 
     min="1" 
-    max="1000000" 
+    max="100000000" 
     #numInput="ngModel"
     required
   >
@@ -269,7 +269,7 @@
     Por favor introduzir valor.
   </span>
   <span *ngIf="numInput.errors?.['min'] || numInput.errors?.['max']">
-    Valor tem de estar entre 1 e 1000000.
+    Valor tem de estar entre 1 e 10000000.
   </span>
 </div>
 
