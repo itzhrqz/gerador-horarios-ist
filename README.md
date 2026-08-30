@@ -28,6 +28,21 @@
   </a>
 </p>
 
+<p align="center" style="display: flex; justify-content: center; align-items: center; gap: 1rem;">
+    <a href="https://paypal.me/HCarvalhoMM" target="_blank" style="display: inline-block;">
+        <img src="https://github.com/user-attachments/assets/4339f832-dcf8-44a1-8300-913148b1061a" 
+             alt="Support on Paypal" 
+             style="height: 41px !important; width: auto; object-fit: contain;" />
+    </a>
+    <a href="https://buymeacoffee.com/itzhrqz" target="_blank" style="display: inline-block;">
+        <img src="https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png" 
+             alt="Buy Me A Coffee" 
+             style="height: 41px !important; width: auto; object-fit: contain;" />
+    </a>
+</p>
+
+
+
 <h4 align="center">
   <a href="https://github.com/itzhrqz/gerador-horarios-ist">Gerador de Horários | IST</a>
 </h4>
