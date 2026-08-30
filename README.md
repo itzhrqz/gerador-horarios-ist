@@ -151,7 +151,7 @@ When there is only one weekly session of a given class type, the option is not a
 
 # Development
 
-This project uses [Angular CLI](https://cli.angular.io/) version 13.2.2.
+This project uses [Angular CLI](https://cli.angular.io/) version 17.3.9.
 
 ## Run
 
