@@ -1,0 +1,9 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "gerador-horarios-ist",
+  "compatibility_date": "2026-08-30",
+  "assets": {
+    "directory": "./dist/gerador-horarios-ist",
+    "not_found_handling": "single-page-application"
+  }
+}
