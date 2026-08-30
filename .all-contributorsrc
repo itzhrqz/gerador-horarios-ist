@@ -37,11 +37,34 @@
       "contributions": [
         "ideas"
       ]
+    },
+    {
+      "login": "ricardo55ribeiro",
+      "name": "Ricardo Ribeiro",
+      "avatar_url": "https://avatars.githubusercontent.com/u/151793123?v=4",
+      "profile": "https://github.com/ricardo55ribeiro",
+      "contributions": [
+        "code",
+        "ideas"
+      ]
+    },
+    {
+      "login": "itzhrqz",
+      "name": "Henrique Carvalho",
+      "avatar_url": "https://avatars.githubusercontent.com/u/266761932?v=4",
+      "profile": "https://github.com/itzhrqz",
+      "contributions": [
+        "code",
+        "ideas",
+        "infra",
+        "bug",
+        "translation"
+      ]
     }
   ],
   "contributorsPerLine": 7,
   "projectName": "gerador-horarios-ist",
-  "projectOwner": "joanasesinando",
+  "projectOwner": "itzhrqz",
   "repoType": "github",
   "repoHost": "https://github.com",
   "skipCi": true
