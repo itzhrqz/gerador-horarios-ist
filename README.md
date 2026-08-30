@@ -38,7 +38,7 @@
 
 A schedule generator for [IST](https://tecnico.ulisboa.pt/en/) students to plan their schedule for the semester.
 
-This application uses the [FenixEdu API](https://fenixedu.org/dev/api/) to get information about academic terms, degrees, courses and their timetables.
+*This application uses the [FenixEdu API](https://fenixedu.org/dev/api/) to get information about academic terms, degrees, courses and their timetables.*
 
 <p align="center">
   <img alt="logo" src="./src/assets/readme/logo.png">
@@ -212,3 +212,5 @@ This project follows the [all-contributors](https://allcontributors.org/docs/en/
 # License
 
 [MIT](https://github.com/itzhrqz/gerador-horarios-ist/blob/master/LICENSE)
+
+
