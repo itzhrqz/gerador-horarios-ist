@@ -20,7 +20,7 @@ export class StateService {
   // (did the toggle because not everyone might want it)
   private _mixShiftsEnabled = false;
 
-
+  public maxSchedulesInMemory: number = 100000;
 
 
   private _academicTermsRepository: string[] = null;

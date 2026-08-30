@@ -9,170 +9,380 @@ import {ClassType} from '../_domain/ClassType/ClassType';
 import {formatTime, getTimestamp} from '../_util/Time';
 
 
-addEventListener('message', ({data}) => {
+interface GeneratorState {
+  classesPerCourse: Class[][];
+  firstClassStart: number;
+  firstClassCount: number;
+  current: Class[];
+  currentIndexes: number[];
+  stackIndexes: number[];
+  exhausted: boolean;
+  generated: number;
+  firstClassIndex: number;
+  pendingRemaining: number;
+  pendingTakeTotal: number;
+}
 
-  if (data.type !== 'generate')
+
+const RESULT_CHUNK_SIZE = 10000;
+
+let state: GeneratorState | null = null;
+
+
+addEventListener(
+  'message',
+  ({data}) => {
+    try {
+      if (!data || !data.type) {
+        return;
+      }
+
+      if (data.type === 'init') {
+        const classesPerCourse = parseClassesPerCourse(data.classes);
+        const firstClassStart = Math.max(0, Number(data.firstClassStart) || 0);
+        const firstClassCount = Math.max(0, Number(data.firstClassCount) || 0);
+
+        state = {
+          classesPerCourse,
+          firstClassStart,
+          firstClassCount,
+          current: [],
+          currentIndexes: [],
+          stackIndexes: new Array(
+            Math.max(0, classesPerCourse.length - 1)
+          ).fill(0),
+          exhausted:
+            classesPerCourse.length === 0 || firstClassCount === 0,
+          generated: 0,
+          firstClassIndex: 0,
+          pendingRemaining: 0,
+          pendingTakeTotal: 0
+        };
+
+        postMessage({
+          type: 'initialized',
+          exhausted: state.exhausted
+        });
+        return;
+      }
+
+      if (data.type === 'generate') {
+        if (!state) {
+          postMessage({
+            type: 'error',
+            message: 'Generation worker received generate before init.'
+          });
+          return;
+        }
+
+        /*
+         * Only one generate request may be active at a time.
+         * Results are deliberately streamed in small transferable chunks.
+         */
+        if (state.pendingRemaining > 0) {
+          postMessage({
+            type: 'error',
+            message: 'Generation worker received overlapping generate request.'
+          });
+          return;
+        }
+
+        const take = Math.max(0, Number(data.take) || 0);
+
+        state.pendingRemaining = take;
+        state.pendingTakeTotal = take;
+
+        emitNextChunk(state);
+        return;
+      }
+
+      if (data.type === 'continue') {
+        if (!state) {
+          return;
+        }
+
+        emitNextChunk(state);
+        return;
+      }
+
+      if (data.type === 'reset') {
+        state = null;
+        postMessage({type: 'reset'});
+        return;
+      }
+    } catch (error) {
+      postMessage({
+        type: 'error',
+        message:
+          error instanceof Error
+            ? error.message
+            : String(error)
+      });
+    }
+  }
+);
+
+
+function emitNextChunk(
+  generator: GeneratorState
+): void {
+  if (generator.pendingRemaining <= 0) {
     return;
-
-  console.log('Worker #' + data.worker + ' working...');
-
-  const classes: Class[][] = parseClassesPerCourse(data.classes);
-  const firstClasses: Class[] = parseClasses(data.firstClasses);
-
-  const maxCombinations: number = data.maxCombinations;
-
-  const combinations: Class[][] = [];
-  const current: Class[] = [];
-
-  /*
-   * Each worker receives a subset of the classes of the first course.
-   *
-   * Example:
-   *
-   * Course 1: [A, B, C, D, E, F]
-   *
-   * Worker 1: [A, B]
-   * Worker 2: [C, D]
-   * Worker 3: [E, F]
-   *
-   * This guarantees that workers explore different parts
-   * of the search tree.
-   */
-  for (const firstClass of firstClasses) {
-
-    if (combinations.length >= maxCombinations)
-      break;
-
-    current.push(firstClass);
-
-    generateCombinations(
-      classes,
-      1,
-      current,
-      combinations,
-      maxCombinations
-    );
-
-    current.pop();
   }
 
-  postMessage({
-    type: 'result',
-    combinations
-  });
-
-  console.log(
-    'Worker #' + data.worker +
-    ' finished! Generated ' +
-    combinations.length +
-    ' combinations.'
+  const chunkTake = Math.min(
+    RESULT_CHUNK_SIZE,
+    generator.pendingRemaining
   );
 
-  postMessage({
-    type: 'finished'
-  });
-});
+  const result = generateNextBatch(
+    generator,
+    chunkTake
+  );
 
+  generator.pendingRemaining -= result.count;
 
-/* --------------------------------------------------------------------------------
- * Generates valid combinations incrementally using backtracking.
- *
- * IMPORTANT:
- *
- * This does NOT generate the Cartesian product first.
- *
- * If a class overlaps with something already selected, that entire branch
- * is discarded immediately.
- *
- * Therefore:
- *
- *     allPossibleCases()
- *
- * is no longer necessary.
- * -------------------------------------------------------------------------------- */
-
-function generateCombinations(
-  classesPerCourse: Class[][],
-  courseIndex: number,
-  current: Class[],
-  combinations: Class[][],
-  maxCombinations: number
-): void {
+  const done =
+    generator.pendingRemaining <= 0 ||
+    result.exhausted ||
+    result.count === 0;
 
   /*
-   * Stop immediately when the worker has reached its limit.
+   * The buffer is TRANSFERRED, not cloned.
+   * After postMessage returns, ownership belongs to the main thread.
    */
-  if (combinations.length >= maxCombinations)
-    return;
+  postMessage(
+    {
+      type: 'result',
+      buffer: result.buffer,
+      count: result.count,
+      exhausted: result.exhausted,
+      generated: generator.generated,
+      done
+    },
+    [result.buffer]
+  );
 
-  /*
-   * A class has been selected for every course.
-   *
-   * Therefore we have found one valid schedule.
-   */
-  if (courseIndex >= classesPerCourse.length) {
-    combinations.push([...current]);
-    return;
-  }
-
-  const classes = classesPerCourse[courseIndex];
-
-  for (const cls of classes) {
-
-    /*
-     * Don't continue searching after reaching the limit.
-     */
-    if (combinations.length >= maxCombinations)
-      return;
-
-    /*
-     * Check the new class against everything already selected.
-     */
-    if (checkForOverlapWithCurrentClasses(cls, current))
-      continue;
-
-    /*
-     * Choose this class.
-     */
-    current.push(cls);
-
-    /*
-     * Explore the rest of the tree.
-     */
-    generateCombinations(
-      classesPerCourse,
-      courseIndex + 1,
-      current,
-      combinations,
-      maxCombinations
-    );
-
-    /*
-     * Undo the choice.
-     *
-     * This is the key property of backtracking:
-     * `current` never contains more than one path through the tree.
-     */
-    current.pop();
+  if (done) {
+    generator.pendingRemaining = 0;
+    generator.pendingTakeTotal = 0;
   }
 }
 
 
-/* --------------------------------------------------------------------------------
- * Checks whether a class overlaps with any class already selected.
- *
- * We only need to compare against the current partial schedule.
- * -------------------------------------------------------------------------------- */
+function generateNextBatch(
+  generator: GeneratorState,
+  take: number
+): {
+  buffer: ArrayBuffer;
+  count: number;
+  exhausted: boolean;
+  generated: number;
+} {
+  const courseCount = generator.classesPerCourse.length;
+
+  /* One Uint32 per course per schedule. */
+  const indexes = new Uint32Array(
+    Math.max(0, take * courseCount)
+  );
+
+  let count = 0;
+
+  if (
+    generator.exhausted ||
+    take <= 0 ||
+    courseCount === 0
+  ) {
+    return {
+      buffer: indexes.buffer,
+      count: 0,
+      exhausted: generator.exhausted,
+      generated: generator.generated
+    };
+  }
+
+  /* ------------------------------------------------------------------------
+   * ONE COURSE
+   * ---------------------------------------------------------------------- */
+
+  if (courseCount === 1) {
+    while (
+      count < take &&
+      generator.firstClassIndex < generator.firstClassCount
+    ) {
+      indexes[count] =
+        generator.firstClassStart + generator.firstClassIndex;
+
+      generator.firstClassIndex++;
+      generator.generated++;
+      count++;
+    }
+
+    if (
+      generator.firstClassIndex >=
+      generator.firstClassCount
+    ) {
+      generator.exhausted = true;
+    }
+
+    return {
+      buffer: indexes.buffer,
+      count,
+      exhausted: generator.exhausted,
+      generated: generator.generated
+    };
+  }
+
+  /* ------------------------------------------------------------------------
+   * GENERAL CASE
+   * ---------------------------------------------------------------------- */
+
+  while (
+    count < take &&
+    !generator.exhausted
+  ) {
+    if (generator.current.length === 0) {
+      if (
+        generator.firstClassIndex >=
+        generator.firstClassCount
+      ) {
+        generator.exhausted = true;
+        break;
+      }
+
+      const globalFirstIndex =
+        generator.firstClassStart +
+        generator.firstClassIndex;
+
+      generator.current.push(
+        generator.classesPerCourse[0][globalFirstIndex]
+      );
+
+      generator.currentIndexes.push(globalFirstIndex);
+
+      for (
+        let i = 0;
+        i < generator.stackIndexes.length;
+        i++
+      ) {
+        generator.stackIndexes[i] = 0;
+      }
+    }
+
+    if (
+      generator.current.length ===
+      generator.classesPerCourse.length
+    ) {
+      const base = count * courseCount;
+
+      for (
+        let i = 0;
+        i < courseCount;
+        i++
+      ) {
+        indexes[base + i] = generator.currentIndexes[i];
+      }
+
+      count++;
+      generator.generated++;
+
+      backtrack(generator);
+      continue;
+    }
+
+    const courseIndex = generator.current.length;
+    const stackIndex = courseIndex - 1;
+    const classes = generator.classesPerCourse[courseIndex];
+
+    let classIndex =
+      generator.stackIndexes[stackIndex];
+
+    let found = false;
+
+    while (classIndex < classes.length) {
+      const cls = classes[classIndex];
+
+      generator.stackIndexes[stackIndex] =
+        classIndex + 1;
+
+      classIndex++;
+
+      if (
+        checkForOverlapWithCurrentClasses(
+          cls,
+          generator.current
+        )
+      ) {
+        continue;
+      }
+
+      generator.current.push(cls);
+      generator.currentIndexes.push(classIndex - 1);
+
+      if (
+        stackIndex + 1 <
+        generator.stackIndexes.length
+      ) {
+        generator.stackIndexes[stackIndex + 1] = 0;
+      }
+
+      found = true;
+      break;
+    }
+
+    if (!found) {
+      generator.stackIndexes[stackIndex] = 0;
+      backtrack(generator);
+    }
+  }
+
+  return {
+    buffer: indexes.buffer,
+    count,
+    exhausted: generator.exhausted,
+    generated: generator.generated
+  };
+}
+
+
+function backtrack(
+  generator: GeneratorState
+): void {
+  if (generator.current.length > 0) {
+    generator.current.pop();
+    generator.currentIndexes.pop();
+  }
+
+  if (generator.current.length === 0) {
+    generator.firstClassIndex++;
+
+    for (
+      let i = 0;
+      i < generator.stackIndexes.length;
+      i++
+    ) {
+      generator.stackIndexes[i] = 0;
+    }
+
+    if (
+      generator.firstClassIndex >=
+      generator.firstClassCount
+    ) {
+      generator.exhausted = true;
+    }
+  }
+}
+
 
 function checkForOverlapWithCurrentClasses(
   cls: Class,
   current: Class[]
 ): boolean {
-
-  for (const selectedClass of current)
-    if (overlapClass(cls, selectedClass))
+  for (const selectedClass of current) {
+    if (overlapClass(cls, selectedClass)) {
       return true;
-
+    }
+  }
   return false;
 }
 
@@ -181,12 +391,13 @@ function overlapClass(
   class1: any,
   class2: any
 ): boolean {
-
-  for (const shift of class1._shifts)
-    for (const otherShift of class2._shifts)
-      if (overlapShift(shift, otherShift))
+  for (const shift of class1._shifts) {
+    for (const otherShift of class2._shifts) {
+      if (overlapShift(shift, otherShift)) {
         return true;
-
+      }
+    }
+  }
   return false;
 }
 
@@ -195,12 +406,13 @@ function overlapShift(
   shift1: any,
   shift2: any
 ): boolean {
-
-  for (const lesson of shift1._lessons)
-    for (const otherLesson of shift2._lessons)
-      if (overlapLesson(lesson, otherLesson))
+  for (const lesson of shift1._lessons) {
+    for (const otherLesson of shift2._lessons) {
+      if (overlapLesson(lesson, otherLesson)) {
         return true;
-
+      }
+    }
+  }
   return false;
 }
 
@@ -209,100 +421,78 @@ function overlapLesson(
   lesson1: any,
   lesson2: any
 ): boolean {
-
-  /*
-   * Do NOT mutate the lesson objects here.
-   *
-   * The old implementation did:
-   *
-   *     lesson1.start = new Date(...)
-   *
-   * which is unnecessary.
-   */
-
   const start1 = new Date(lesson1._start);
   const end1 = new Date(lesson1._end);
-
   const start2 = new Date(lesson2._start);
   const end2 = new Date(lesson2._end);
 
   const weekDay1 = start1.getDay();
   const weekDay2 = start2.getDay();
 
-  /*
-   * Lessons on different days cannot overlap.
-   */
-  if (weekDay1 !== weekDay2)
+  if (weekDay1 !== weekDay2) {
     return false;
+  }
 
   const startTime1 = getTimestamp(formatTime(start1));
   const endTime1 = getTimestamp(formatTime(end1));
-
   const startTime2 = getTimestamp(formatTime(start2));
   const endTime2 = getTimestamp(formatTime(end2));
 
-  /*
-   * Standard interval overlap test:
-   *
-   * A.start < B.end && B.start < A.end
-   *
-   * Therefore:
-   *
-   * 09:30 - 11:00
-   * 11:00 - 12:30
-   *
-   * are NOT considered overlapping.
-   */
-  return startTime1 < endTime2 &&
-         startTime2 < endTime1;
+  return (
+    startTime1 < endTime2 &&
+    startTime2 < endTime1
+  );
 }
 
 
-/* --------------------------------------------------------------------------------
- * Converts the serialized Class[][] received through postMessage()
- * back into Class instances.
- * -------------------------------------------------------------------------------- */
-
-function parseClassesPerCourse(data: any[][]): Class[][] {
-
+function parseClassesPerCourse(
+  data: any[][]
+): Class[][] {
   const result: Class[][] = [];
 
-  for (const classes of data)
+  for (const classes of data) {
     result.push(parseClasses(classes));
+  }
 
   return result;
 }
 
 
-function parseClasses(data: any[]): Class[] {
-
+function parseClasses(
+  data: any[]
+): Class[] {
   const classes: Class[] = [];
 
   for (const item of data) {
-
     const course = getCourse(item._course);
     const shifts = getShifts(item._shifts);
 
-    classes.push(new Class(course, shifts));
+    classes.push(
+      new Class(
+        course,
+        shifts
+      )
+    );
   }
 
   return classes;
 }
 
 
-function getCourse(course): Course {
-
+function getCourse(
+  course: any
+): Course {
   const shifts = getShifts(course._shifts);
 
   const types: ClassType[] = [];
-
-  for (const type of course._types)
+  for (const type of course._types) {
     types.push(type);
+  }
 
   const campus: string[] = [];
-
-  for (const camp of course._campus)
+  for (const camp of course._campus) {
     campus.push(camp);
+  }
 
   return new Course(
     course._id,
@@ -324,12 +514,12 @@ function getCourse(course): Course {
 }
 
 
-function getShifts(shs): Shift[] {
-
+function getShifts(
+  shs: any[]
+): Shift[] {
   const shifts: Shift[] = [];
 
   for (const shift of shs) {
-
     const lessons: Lesson[] = [];
 
     for (const lesson of shift._lessons) {

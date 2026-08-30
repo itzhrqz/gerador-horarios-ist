@@ -60,9 +60,15 @@
       <div class="widgets d-flex">
         <a class="icon-wrapper github mr-2" id="widget-github"
            href="https://github.com/joanasesinando/gerador-horarios-ist" target="_blank"
-           data-toggle="tooltip" data-placement="top">
+           data-toggle="tooltip" data-placement="top" >
           <fa-icon [icon]="faGithub" class="fa-md"></fa-icon>
         </a>
+
+        <a class="icon-wrapper github mr-2" id="widget-github-itzhrqz"
+     href="https://github.com/itzhrqz/gerador-horarios-ist" target="_blank"
+     data-toggle="tooltip" data-placement="top" title="Repositório atualizado por itzhrqz">
+    <fa-icon [icon]="faGithub" class="fa-md"></fa-icon>
+  </a>
 
         <a class="icon-wrapper feedback mr-2"
            href="https://forms.gle/CaHC8TB6xjpahXWe9" target="_blank"
@@ -243,11 +249,44 @@
                 (typesOfClassesSelected)="pickTypesOfClasses($event)"
                 (individualLessonsToggled)="pickIndividualLessons($event)"
                 (removeBtn)="removeCourse($event)"></app-course-banner>
+<br>
+<div class="form-group">
+  <label for="numericInput">Número máximo de horários em memória (100K-500K recomendado)</label>
+  <input 
+    id="numericInput"
+    type="number" 
+    class="form-control"
+    [(ngModel)]="maxSchedulesInMemory" 
+    min="1" 
+    max="1000000" 
+    #numInput="ngModel"
+    required
+  >
 
-              <!-- Generate btn -->
-              <button *ngIf="selectedCourses.length !== 0"
-                      class="btn btn-lg btn-primary btn-block btn-generate mt-5"
-                      type="button" (click)="generateSchedules()">{{'main-content.generate-btn' | translate}}</button>
+  <!-- Error message for empty state or out of bounds -->
+<div *ngIf="numInput.invalid && (numInput.dirty || numInput.touched)" class="text-danger mt-1">
+  <span *ngIf="numInput.errors?.['required']">
+    Por favor introduzir valor.
+  </span>
+  <span *ngIf="numInput.errors?.['min'] || numInput.errors?.['max']">
+    Valor tem de estar entre 1 e 1000000.
+  </span>
+</div>
+
+
+
+              <!-- Generate Button -->
+<button *ngIf="selectedCourses.length !== 0"
+        class="btn btn-lg btn-primary btn-block btn-generate mt-5"
+        type="button" 
+        [disabled]="numInput.invalid"
+        (click)="generateSchedules()">
+  {{'main-content.generate-btn' | translate}}
+</button>
+
+
+
+              
 
             </div>
           </div>

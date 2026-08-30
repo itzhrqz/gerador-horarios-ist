@@ -47,6 +47,5 @@ debug.log
 .DS_Store
 Thumbs.db
 
-# Secrets
-/src/environments/secrets.ts
-meu_projeto.tar.gz
+
+

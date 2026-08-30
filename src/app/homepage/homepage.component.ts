@@ -35,6 +35,7 @@ declare let $;
 })
 export class HomepageComponent implements OnInit, AfterViewInit {
 
+  public maxSchedulesInMemory: number = 100000;
   projectVersion: string = environment.projectVersion;
 
   mobileView = false;
@@ -453,6 +454,7 @@ export class HomepageComponent implements OnInit, AfterViewInit {
   generateSchedules(): void {
     if (this.selectedCourses.length > 0) {
       // Save state
+      this.stateService.maxSchedulesInMemory = this.maxSchedulesInMemory;
       this.stateService.academicTermSelected = this.selectedAcademicTerm;
       this.stateService.degreeIDSelected = this.selectedDegree;
       this.stateService.selectedCourses = _.cloneDeep(this.selectedCourses);

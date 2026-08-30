@@ -22,7 +22,7 @@ const NO_ROOM_FOUND = 'NO ROOM FOUND';
 })
 export class FenixService {
 
-  cors = 'https://corsproxy.io/?url=';
+  cors = 'https://fenix-api-cors.zkiller-dev.workers.dev/?url=';
   api = 'https://fenix.tecnico.ulisboa.pt/api/fenix/v1/';
   currentAcademicTerm: string;
 
@@ -272,6 +272,7 @@ export class FenixService {
       method: 'GET'
     });
   }
+
 
   getCurrentAcademicTerm(): Promise<string> {
     return this.httpGet('about')

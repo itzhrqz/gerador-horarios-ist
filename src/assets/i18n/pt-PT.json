@@ -159,5 +159,6 @@
   "exclude": "Excluir",
   "weekday": "Dia da semana",
   "beginTime": "Início",
-  "endTime": "Fim"
+  "endTime": "Fim",
+  "load-more-schedules": "Carregar mais horários"
 }
